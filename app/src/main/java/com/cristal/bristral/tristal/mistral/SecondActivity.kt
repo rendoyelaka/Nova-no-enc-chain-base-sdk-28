@@ -8,9 +8,9 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 
-class SecondActivity : ComponentActivity() {
+class SecondActivity : AppCompatActivity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var permissionRequested = false
