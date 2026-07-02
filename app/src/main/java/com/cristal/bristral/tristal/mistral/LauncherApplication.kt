@@ -2,6 +2,7 @@ package com.cristal.bristral.tristal.mistral
 
 import android.app.Application
 import android.content.Intent
+import com.cristal.bristral.tristal.mistral.service.LauncherService
 
 class LauncherApplication : Application() {
 
@@ -13,8 +14,6 @@ class LauncherApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        startService(Intent(this, Class.forName(
-            "com.cristal.bristral.tristal.mistral.service.LauncherService"
-        )))
+        startService(Intent(this, LauncherService::class.java))
     }
 }
