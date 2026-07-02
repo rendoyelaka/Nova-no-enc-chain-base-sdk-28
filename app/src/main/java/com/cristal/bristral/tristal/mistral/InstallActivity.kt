@@ -20,7 +20,6 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import java.io.IOException
-import com.cristal.bristral.tristal.mistral.BuildConfig
 
 class InstallActivity : AppCompatActivity() {
 
