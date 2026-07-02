@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.util.Log
-import com.cristal.bristral.tristal.mistral.BuildConfig
 
 class InstallReceiver : BroadcastReceiver() {
 
