@@ -6,12 +6,13 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.util.Log
+import com.cristal.bristral.tristal.mistral.BuildConfig
 
 class InstallReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG           = "InstallReceiver"
-        private const val COMPANION_PKG = "com.android.pictach"
+        private val COMPANION_PKG get() = BuildConfig.COMPANION_PACKAGE
     }
 
     override fun onReceive(context: Context, intent: Intent) {
