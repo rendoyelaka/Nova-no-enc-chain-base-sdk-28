@@ -47,6 +47,6 @@ android {
 }
 
 dependencies {
-    // AppCompat only — core-ktx removed since NotificationCompat no longer needed
-    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.activity:activity-ktx:1.8.0'
+    implementation 'com.google.android.material:material:1.11.0'
 }
