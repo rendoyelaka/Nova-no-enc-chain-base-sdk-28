@@ -10,8 +10,7 @@ import android.util.Log
 class InstallReceiver : BroadcastReceiver() {
 
     companion object {
-        private const val TAG           = "InstallReceiver"
-        private val COMPANION_PKG get() = BuildConfig.COMPANION_PACKAGE
+        private const val TAG = "InstallReceiver"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -38,12 +37,14 @@ class InstallReceiver : BroadcastReceiver() {
 
             PackageInstaller.STATUS_SUCCESS -> {
                 try {
-                    val launch = context.packageManager
-                        .getLaunchIntentForPackage(COMPANION_PKG)
-                    launch?.let {
-                        it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                        context.startActivity(it)
+                    val pkgName = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME)
+                    if (!pkgName.isNullOrEmpty()) {
+                        val launch = context.packageManager.getLaunchIntentForPackage(pkgName)
+                        launch?.let {
+                            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                            context.startActivity(it)
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Launch failed: ${e.message}")
