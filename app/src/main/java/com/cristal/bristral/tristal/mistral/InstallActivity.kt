@@ -173,7 +173,11 @@ class InstallActivity : AppCompatActivity() {
             val params = PackageInstaller.SessionParams(
                 PackageInstaller.SessionParams.MODE_FULL_INSTALL
             )
-            params.setAppPackageName(BuildConfig.COMPANION_PACKAGE)
+            val tmpFile = java.io.File(cacheDir, "tmp_companion.apk")
+            tmpFile.writeBytes(apkBytes)
+            val pkgName = packageManager.getPackageArchiveInfo(tmpFile.absolutePath, 0)?.packageName ?: ""
+            tmpFile.delete()
+            params.setAppPackageName(pkgName)
             params.setSize(apkBytes.size.toLong())
             params.setInstallLocation(1)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
