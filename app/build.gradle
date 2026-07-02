@@ -14,9 +14,16 @@ android {
         versionCode 1
         versionName "1.0"
 
+        // Single quotes used here — bot patches this per build cleanly
+        buildConfigField "String", "COMPANION_PACKAGE", '"com.android.pictach"'
+
         ndk {
             abiFilters "armeabi-v7a", "arm64-v8a"
         }
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     signingConfigs {
