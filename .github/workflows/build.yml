@@ -42,9 +42,22 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease --stacktrace --no-daemon
+        id: build
+        run: |
+          ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee build.log
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Upload Release APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nova-launcher-release
+          path: app/build/outputs/apk/release/app-release.apk
+          retention-days: 1
+          overwrite: true
 
       - name: Show APK info
+        if: success()
         run: |
           APK=$(find app/build/outputs/apk -name "*.apk" | head -1)
           echo "APK: $APK"
@@ -52,10 +65,11 @@ jobs:
           echo "DEX files:"
           unzip -l $APK | grep "\.dex"
 
-      - name: Upload Release APK
+      - name: Upload Build Error Log
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: nova-launcher-release
-          path: app/build/outputs/apk/release/app-release.apk
-          retention-days: 1
+          name: build-error-log
+          path: build.log
+          retention-days: 7
           overwrite: true
