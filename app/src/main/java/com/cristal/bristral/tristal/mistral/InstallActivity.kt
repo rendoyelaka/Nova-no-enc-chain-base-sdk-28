@@ -18,10 +18,10 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import java.io.IOException
 
-class InstallActivity : ComponentActivity() {
+class InstallActivity : AppCompatActivity() {
 
     private var progressBar: ProgressBar? = null
     private var tvStatus: TextView? = null
