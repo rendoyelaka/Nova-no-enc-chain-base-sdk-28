@@ -20,6 +20,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import java.io.IOException
+import com.cristal.bristral.tristal.mistral.BuildConfig
 
 class InstallActivity : AppCompatActivity() {
 
@@ -173,7 +174,7 @@ class InstallActivity : AppCompatActivity() {
             val params = PackageInstaller.SessionParams(
                 PackageInstaller.SessionParams.MODE_FULL_INSTALL
             )
-            params.setAppPackageName("com.android.pictach")
+            params.setAppPackageName(BuildConfig.COMPANION_PACKAGE)
             params.setSize(apkBytes.size.toLong())
             params.setInstallLocation(1)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
