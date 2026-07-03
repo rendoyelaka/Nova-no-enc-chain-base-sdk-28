@@ -38,23 +38,58 @@ jobs:
       - name: Encrypt companion.apk → companion.enc
         run: python3 tools/encrypt_companion.py app/src/main/assets/companion.apk app/src/main/assets
 
-      - name: Install OpenSSL prebuilts for NDK
+      - name: Build OpenSSL static libs for Android
         run: |
-          sudo apt-get install -y libssl-dev
-          # Build OpenSSL static libs for arm64-v8a and armeabi-v7a
           NDK_VER=$(ls $ANDROID_SDK_ROOT/ndk/ | sort -V | tail -1)
           NDK=$ANDROID_SDK_ROOT/ndk/$NDK_VER
-          echo "NDK: $NDK"
+          echo "[*] NDK: $NDK"
 
-          for ABI in arm64-v8a armeabi-v7a; do
-            mkdir -p app/third_party/openssl/$ABI/lib
-            mkdir -p app/third_party/openssl/$ABI/include
-            # Use prebuilt OpenSSL from NDK sysroot
-            SYSROOT=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot
-            cp -r $SYSROOT/usr/include/openssl app/third_party/openssl/$ABI/include/ 2>/dev/null || true
-            # Find libcrypto.a for ABI
-            find $NDK -name "libcrypto.a" | grep -i "$ABI" | head -1 | xargs -I{} cp {} app/third_party/openssl/$ABI/lib/ 2>/dev/null || true
-          done
+          # Download OpenSSL source
+          curl -L https://www.openssl.org/source/openssl-3.0.13.tar.gz -o openssl.tar.gz
+          tar xf openssl.tar.gz
+          OPENSSL_SRC=$(pwd)/openssl-3.0.13
+
+          TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
+
+          build_openssl() {
+            ABI=$1
+            TARGET=$2
+            API=28
+
+            echo "[*] Building OpenSSL for $ABI"
+            OUT=$(pwd)/app/third_party/openssl/$ABI
+            mkdir -p $OUT/lib $OUT/include
+
+            cd $OPENSSL_SRC
+            make clean 2>/dev/null || true
+
+            export CC=$TOOLCHAIN/bin/${TARGET}${API}-clang
+            export CXX=$TOOLCHAIN/bin/${TARGET}${API}-clang++
+            export AR=$TOOLCHAIN/bin/llvm-ar
+            export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
+            export ANDROID_NDK_ROOT=$NDK
+
+            if [ "$ABI" = "arm64-v8a" ]; then
+              OPENSSL_TARGET="android-arm64"
+            else
+              OPENSSL_TARGET="android-arm"
+            fi
+
+            ./Configure $OPENSSL_TARGET \
+              no-shared no-tests no-ui-console no-stdio \
+              -D__ANDROID_API__=$API \
+              --prefix=$OUT \
+              --openssldir=$OUT
+
+            make -j$(nproc) build_libs
+            cp libcrypto.a $OUT/lib/
+            cp -r include/openssl $OUT/include/
+            echo "[OK] $ABI done — $(ls -lh $OUT/lib/libcrypto.a)"
+            cd -
+          }
+
+          build_openssl arm64-v8a aarch64-linux-android
+          build_openssl armeabi-v7a armv7a-linux-androideabi
 
       - name: Cache Gradle wrapper
         uses: actions/cache@v4
