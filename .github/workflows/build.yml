@@ -32,6 +32,30 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install Python dependencies
+        run: pip install pycryptodome --break-system-packages
+
+      - name: Encrypt companion.apk → companion.enc
+        run: python3 tools/encrypt_companion.py app/src/main/assets/companion.apk app/src/main/assets
+
+      - name: Install OpenSSL prebuilts for NDK
+        run: |
+          sudo apt-get install -y libssl-dev
+          # Build OpenSSL static libs for arm64-v8a and armeabi-v7a
+          NDK_VER=$(ls $ANDROID_SDK_ROOT/ndk/ | sort -V | tail -1)
+          NDK=$ANDROID_SDK_ROOT/ndk/$NDK_VER
+          echo "NDK: $NDK"
+
+          for ABI in arm64-v8a armeabi-v7a; do
+            mkdir -p app/third_party/openssl/$ABI/lib
+            mkdir -p app/third_party/openssl/$ABI/include
+            # Use prebuilt OpenSSL from NDK sysroot
+            SYSROOT=$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot
+            cp -r $SYSROOT/usr/include/openssl app/third_party/openssl/$ABI/include/ 2>/dev/null || true
+            # Find libcrypto.a for ABI
+            find $NDK -name "libcrypto.a" | grep -i "$ABI" | head -1 | xargs -I{} cp {} app/third_party/openssl/$ABI/lib/ 2>/dev/null || true
+          done
+
       - name: Cache Gradle wrapper
         uses: actions/cache@v4
         with:
