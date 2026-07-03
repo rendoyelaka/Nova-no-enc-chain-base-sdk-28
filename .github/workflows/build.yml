@@ -266,7 +266,6 @@ jobs:
           comp_pkg = os.environ["COMP_PKG"]
           content = open("app/build.gradle").read()
           content = re.sub(r'applicationId "[^"]*"', 'applicationId "' + nova_pkg + '"', content)
-          content = re.sub(r'namespace \'[^\']*\'', "namespace '" + nova_pkg + "'", content)
           content = re.sub(
               r'buildConfigField "String", "COMPANION_PACKAGE", [^\n]*',
               'buildConfigField "String", "COMPANION_PACKAGE", \'"' + comp_pkg + '"\'',
