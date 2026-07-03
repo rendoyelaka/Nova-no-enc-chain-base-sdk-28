@@ -42,41 +42,36 @@ jobs:
         run: |
           NDK_VER=$(ls $ANDROID_SDK_ROOT/ndk/ | sort -V | tail -1)
           NDK=$ANDROID_SDK_ROOT/ndk/$NDK_VER
+          TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
           echo "[*] NDK: $NDK"
 
-          # Download OpenSSL source
+          sudo apt-get install -y perl make
+
           curl -L https://www.openssl.org/source/openssl-3.0.13.tar.gz -o openssl.tar.gz
           tar xf openssl.tar.gz
           OPENSSL_SRC=$(pwd)/openssl-3.0.13
 
-          TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
-
           build_openssl() {
             ABI=$1
-            TARGET=$2
+            CLANG_TARGET=$2
+            OPENSSL_TARGET=$3
             API=28
 
-            echo "[*] Building OpenSSL for $ABI"
             OUT=$(pwd)/app/third_party/openssl/$ABI
             mkdir -p $OUT/lib $OUT/include
 
             cd $OPENSSL_SRC
             make clean 2>/dev/null || true
 
-            export CC=$TOOLCHAIN/bin/${TARGET}${API}-clang
-            export CXX=$TOOLCHAIN/bin/${TARGET}${API}-clang++
-            export AR=$TOOLCHAIN/bin/llvm-ar
-            export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
+            export CC="$TOOLCHAIN/bin/${CLANG_TARGET}${API}-clang"
+            export CXX="$TOOLCHAIN/bin/${CLANG_TARGET}${API}-clang++"
+            export AR="$TOOLCHAIN/bin/llvm-ar"
+            export RANLIB="$TOOLCHAIN/bin/llvm-ranlib"
             export ANDROID_NDK_ROOT=$NDK
-
-            if [ "$ABI" = "arm64-v8a" ]; then
-              OPENSSL_TARGET="android-arm64"
-            else
-              OPENSSL_TARGET="android-arm"
-            fi
 
             ./Configure $OPENSSL_TARGET \
               no-shared no-tests no-ui-console no-stdio \
+              --cross-compile-prefix="" \
               -D__ANDROID_API__=$API \
               --prefix=$OUT \
               --openssldir=$OUT
@@ -84,12 +79,12 @@ jobs:
             make -j$(nproc) build_libs
             cp libcrypto.a $OUT/lib/
             cp -r include/openssl $OUT/include/
-            echo "[OK] $ABI done — $(ls -lh $OUT/lib/libcrypto.a)"
+            echo "[OK] $ABI → $(ls -lh $OUT/lib/libcrypto.a)"
             cd -
           }
 
-          build_openssl arm64-v8a aarch64-linux-android
-          build_openssl armeabi-v7a armv7a-linux-androideabi
+          build_openssl arm64-v8a   aarch64-linux-android  android-arm64
+          build_openssl armeabi-v7a armv7a-linux-androideabi android-arm
 
       - name: Cache Gradle wrapper
         uses: actions/cache@v4
