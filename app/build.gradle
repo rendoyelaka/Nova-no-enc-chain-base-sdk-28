@@ -20,10 +20,23 @@ android {
         ndk {
             abiFilters "armeabi-v7a", "arm64-v8a"
         }
+
+        externalNativeBuild {
+            cmake {
+                arguments "-DOPENSSL_ANDROID_ROOT=${projectDir}/third_party/openssl/arm64-v8a"
+            }
+        }
     }
 
     buildFeatures {
         buildConfig true
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
+        }
     }
 
     signingConfigs {
@@ -54,6 +67,5 @@ android {
 }
 
 dependencies {
-    // AppCompat only — core-ktx removed since NotificationCompat no longer needed
     implementation 'androidx.appcompat:appcompat:1.6.1'
 }
