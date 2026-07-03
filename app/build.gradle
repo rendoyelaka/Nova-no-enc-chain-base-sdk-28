@@ -14,8 +14,9 @@ android {
         versionCode 1
         versionName "1.0"
 
-        // Single quotes used here — bot patches this per build cleanly
+        // Both patched per build by build.yml
         buildConfigField "String", "COMPANION_PACKAGE", '"com.android.pictach"'
+        buildConfigField "String", "COMPANION_KEY_HEX", '"PLACEHOLDER"'
 
         ndk {
             abiFilters "armeabi-v7a", "arm64-v8a"
@@ -24,13 +25,6 @@ android {
 
     buildFeatures {
         buildConfig true
-    }
-
-    externalNativeBuild {
-        cmake {
-            path "src/main/cpp/CMakeLists.txt"
-            version "3.22.1"
-        }
     }
 
     signingConfigs {
