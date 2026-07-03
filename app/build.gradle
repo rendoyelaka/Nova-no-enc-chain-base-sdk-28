@@ -20,12 +20,6 @@ android {
         ndk {
             abiFilters "armeabi-v7a", "arm64-v8a"
         }
-
-        externalNativeBuild {
-            cmake {
-                arguments "-DOPENSSL_ANDROID_ROOT=${projectDir}/third_party/openssl/arm64-v8a"
-            }
-        }
     }
 
     buildFeatures {
