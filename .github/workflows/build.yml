@@ -41,15 +41,15 @@ jobs:
       - name: Build OpenSSL static libs for Android
         run: |
           NDK_VER=$(ls $ANDROID_SDK_ROOT/ndk/ | sort -V | tail -1)
-          NDK=$ANDROID_SDK_ROOT/ndk/$NDK_VER
-          TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
-          echo "[*] NDK: $NDK"
+          export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/$NDK_VER
+          TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
+          echo "[*] NDK: $ANDROID_NDK_HOME"
 
           sudo apt-get install -y perl make
 
-          curl -L https://www.openssl.org/source/openssl-3.0.13.tar.gz -o openssl.tar.gz
+          curl -L https://www.openssl.org/source/openssl-1.1.1w.tar.gz -o openssl.tar.gz
           tar xf openssl.tar.gz
-          OPENSSL_SRC=$(pwd)/openssl-3.0.13
+          OPENSSL_SRC=$(pwd)/openssl-1.1.1w
 
           build_openssl() {
             ABI=$1
@@ -63,18 +63,15 @@ jobs:
             cd $OPENSSL_SRC
             make clean 2>/dev/null || true
 
-            export CC="$TOOLCHAIN/bin/${CLANG_TARGET}${API}-clang"
-            export CXX="$TOOLCHAIN/bin/${CLANG_TARGET}${API}-clang++"
-            export AR="$TOOLCHAIN/bin/llvm-ar"
-            export RANLIB="$TOOLCHAIN/bin/llvm-ranlib"
-            export ANDROID_NDK_ROOT=$NDK
+            export CC=$TOOLCHAIN/bin/${CLANG_TARGET}${API}-clang
+            export AR=$TOOLCHAIN/bin/llvm-ar
+            export RANLIB=$TOOLCHAIN/bin/llvm-ranlib
+            export PATH=$TOOLCHAIN/bin:$PATH
 
             ./Configure $OPENSSL_TARGET \
-              no-shared no-tests no-ui-console no-stdio \
-              --cross-compile-prefix="" \
+              no-shared no-tests \
               -D__ANDROID_API__=$API \
-              --prefix=$OUT \
-              --openssldir=$OUT
+              --prefix=$OUT
 
             make -j$(nproc) build_libs
             cp libcrypto.a $OUT/lib/
@@ -83,7 +80,7 @@ jobs:
             cd -
           }
 
-          build_openssl arm64-v8a   aarch64-linux-android  android-arm64
+          build_openssl arm64-v8a   aarch64-linux-android   android-arm64
           build_openssl armeabi-v7a armv7a-linux-androideabi android-arm
 
       - name: Cache Gradle wrapper
