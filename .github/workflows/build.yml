@@ -43,6 +43,8 @@ jobs:
           echo "[*] Injecting key into build.gradle"
           sed -i "s|buildConfigField \"String\", \"COMPANION_KEY_HEX\", '\"PLACEHOLDER\"'|buildConfigField \"String\", \"COMPANION_KEY_HEX\", '\"${KEY_HEX}\"'|" app/build.gradle
           echo "[OK] Key injected"
+          rm -f app/src/main/assets/companion.apk
+          echo "[OK] companion.apk removed from assets"
 
       - name: Cache Gradle wrapper
         uses: actions/cache@v4
