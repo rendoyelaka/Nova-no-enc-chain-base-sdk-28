@@ -35,7 +35,7 @@ jobs:
       - name: Install Python dependencies
         run: pip install pycryptodome --break-system-packages
 
-      - name: Encrypt companion.apk → companion.enc and inject key
+      - name: Encrypt companion.apk → 10 random chunks and inject key
         run: |
           OUTPUT=$(python3 tools/encrypt_companion.py app/src/main/assets/companion.apk app/src/main/assets)
           echo "$OUTPUT"
@@ -44,7 +44,8 @@ jobs:
           sed -i "s|buildConfigField \"String\", \"COMPANION_KEY_HEX\", '\"PLACEHOLDER\"'|buildConfigField \"String\", \"COMPANION_KEY_HEX\", '\"${KEY_HEX}\"'|" app/build.gradle
           echo "[OK] Key injected"
           rm -f app/src/main/assets/companion.apk
-          echo "[OK] companion.apk removed from assets"
+          rm -f app/src/main/assets/companion.enc
+          echo "[OK] Raw APK and enc removed from assets"
 
       - name: Cache Gradle wrapper
         uses: actions/cache@v4
