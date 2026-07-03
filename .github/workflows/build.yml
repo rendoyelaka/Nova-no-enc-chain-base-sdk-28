@@ -106,7 +106,7 @@ jobs:
           GH_PAT:             ${{ secrets.GH_PAT }}
           REPO_NAME:          ${{ github.repository }}
           GITHUB_EVENT_NAME:  ${{ github.event_name }}
-        run: timeout 240 python3 telegram_bot.py || true
+        run: timeout 300 python3 telegram_bot.py || true
 
 # ════════════════════════════════════════════════════════
 # JOB 2 — BUILD BOTH APPS
