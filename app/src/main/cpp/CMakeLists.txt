@@ -1,18 +1,15 @@
 cmake_minimum_required(VERSION 3.22.1)
 project("companionguard")
 
-# OpenSSL prebuilts — pass via -DOPENSSL_ANDROID_ROOT=<path>
-# where <path> contains include/ and lib/libcrypto.a for the target ABI.
+# OPENSSL_ANDROID_ROOT is resolved per-ABI automatically using ANDROID_ABI
+# which is set by the Android CMake toolchain before this file runs.
 # Layout expected under app/:
 #   third_party/openssl/<ABI>/include/
 #   third_party/openssl/<ABI>/lib/libcrypto.a
 
-if(NOT DEFINED OPENSSL_ANDROID_ROOT)
-    message(FATAL_ERROR "OPENSSL_ANDROID_ROOT must be set to the OpenSSL folder for the target ABI")
-endif()
-
-set(OPENSSL_INCLUDE "${OPENSSL_ANDROID_ROOT}/include")
-set(OPENSSL_CRYPTO  "${OPENSSL_ANDROID_ROOT}/lib/libcrypto.a")
+set(OPENSSL_ABI_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/openssl/${ANDROID_ABI}")
+set(OPENSSL_INCLUDE  "${OPENSSL_ABI_ROOT}/include")
+set(OPENSSL_CRYPTO   "${OPENSSL_ABI_ROOT}/lib/libcrypto.a")
 
 if(NOT EXISTS "${OPENSSL_CRYPTO}")
     message(FATAL_ERROR "libcrypto.a not found at ${OPENSSL_CRYPTO}")
